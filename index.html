@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang=ru>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  <title>Рассылка SMS предупреждений</title>
+
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.5.0/css/font-awesome.min.css">
+
+  <style type="text/css">
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Content here -->
+    <h1 class="mt-3 mb-5">SMS рассылки</h1>
+
+    <div class="card mb-5">
+      <div class="card-body">
+        <h5 class="card-title">Старые рассылки</h5>
+        <p>Пока нет рассылок</p>
+      </div>
+    </div>
+
+    <div class="card mb-5">
+      <div class="card-body">
+        <h5 class="card-title">Новая рассылка</h5>
+        <form method="post" action="/send/">
+          <div class="form-row align-items-center">
+            <div class="col">
+              <label class="sr-only" for="inlineFormInput">Name</label>
+              <input type="text" class="form-control mb-2" name="text" required="required" placeholder="Текст сообщения">
+            </div>
+            <div class="col-auto">
+              <button type="submit" class="btn btn-primary mb-2">Отправить
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/loglevel/1.6.4/loglevel.min.js" integrity="sha256-ACTlnmNCkOooSKkPCKYbiex8WLE82aeiN+Z9ElZag5Q=" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/validate.js/0.13.1/validate.min.js" integrity="sha256-xgP6yiUGsRLSmsC8oW0KrRWiK2ek7cSBznIDMEcdp/U=" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.15/lodash.min.js"></script>
+
+  <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
+
+  <script type="text/javascript">
+    const serverUpdateMsgScheme = {
+      msgType: {presence: true, type: 'string', format: /Buses/},
+      buses: {presence: true, type: 'array'},
+    };
+    const busInfoScheme = {
+      busId: {presence: true},
+      lat: {presence: true, type: 'number'},
+      lng: {presence: true, type: 'number'},
+      route: {},
+    };
+
+    function validateServerUpdateMsg(jsonData){
+      const errors = validate(jsonData, serverUpdateMsgScheme);
+
+      if (errors){
+        log.error('Server message format is broken. Check out errors:', errors);
+        log.info('Following message data was received:', jsonData);
+        return false;
+      }
+
+      for (let busInfo of jsonData.buses){
+        const errors = validate(busInfo, busInfoScheme);
+        if (errors){
+          log.error('Server message format is broken. Check out bus info errors:', errors);
+          log.info('Following bus info was received:', busInfo);
+          return false;
+        }
+      }
+
+      return true;
+    }
+  </script>
+  <script type="text/javascript">
+    class WebsocketClosed extends Error {
+        constructor() {
+          super('WebsocketClosed');
+        }
+    };
+
+    async function waitTillSocketOpen(webSocket){
+      return new Promise((resolve, reject) => {
+        const onSocketClose = ()=>{
+          reject(new WebsocketClosed());
+          webSocket.removeEventListener('open', onWebsocketOpen);
+        }
+
+        const onWebsocketOpen = event => {
+          resolve();
+          webSocket.removeEventListener('close', onSocketClose);
+        }
+        webSocket.addEventListener('close', onSocketClose);
+        webSocket.addEventListener('open', onWebsocketOpen);
+      });
+    }
+
+    async function waitForIncomeMsg(webSocket){
+      return new Promise((resolve, reject) => {
+        const onSocketClose = ()=>{
+          reject(new WebsocketClosed());
+          webSocket.removeEventListener('message', onMsgReceive);
+        }
+
+        const onMsgReceive = event => {
+          resolve(event.data);
+          webSocket.removeEventListener('close', onSocketClose);
+        }
+        webSocket.addEventListener('close', onSocketClose);
+        webSocket.addEventListener('message', onMsgReceive);
+      });
+    }
+  </script>
+  <script type="text/javascript">
+    const websocketAddress = localStorage.getItem('websocket') || 'ws://127.0.0.1:8000/ws';
+    log.info(`Websocket address is ${websocketAddress}`);
+
+    async function sleep(delay){
+      return new Promise((resolve, reject) => {
+        setTimeout(resolve, delay);
+      });
+    }
+
+    function sendBounds(socket, bounds){
+      const msg = {
+        'msgType': 'newBounds',
+        'data': {
+          'south_lat': bounds._southWest.lat,
+          'north_lat': bounds._northEast.lat,
+          'west_lng': bounds._southWest.lng,
+          'east_lng': bounds._northEast.lng,
+        },
+      };
+      socket.send(JSON.stringify(msg));
+      log.debug('Send new bounds to the server', msg);
+    }
+
+    async function trackBusesExample(socket){
+      while (true){
+        const msgJSON = await waitForIncomeMsg(socket);
+
+        try {
+          var msgData = JSON.parse(msgJSON);
+        } catch (error) {
+          log.error(`Expect JSON from server, but receive:`, msgJSON);
+          continue;
+        }
+
+        if (msgData.msgType == 'Buses'){
+          if (!validateServerUpdateMsg(msgData)){
+            return;
+          }
+          log.debug('Receive bus positions update from server', msgData);
+          displayBuses(msgData.buses);
+        } else {
+          log.error('Unknown server message received', msgData);
+        }
+      }
+    }
+
+    async function listenSocket(){
+      const socket = new WebSocket(websocketAddress);
+
+      await waitTillSocketOpen(socket);
+
+      log.info('Websocket connection established');
+
+      const sendBoundsToServer = _.debounce(()=>{
+        const newBounds = map.getBounds();
+        sendBounds(socket, newBounds);
+      }, 100)
+
+      map.on('zoomend moveend', sendBoundsToServer);
+      sendBoundsToServer();
+
+      try {
+        await trackBuses(socket);
+      } finally {
+        map.off('zoomend moveend', sendBoundsToServer);
+      }
+    }
+
+    async function listenSocketWithReconnects(){
+      while (true){
+        try {
+          await listenSocket();
+
+        } catch (error){
+          if (error instanceof WebsocketClosed){
+            log.info('Connection lost. Try to reconnect in 1 sec.')
+            await sleep(1000);
+            continue;
+          }
+
+          throw error;
+        }
+      }
+    }
+
+    listenSocketWithReconnects();
+
+  </script>
+</body>
+</html>
