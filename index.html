@@ -10,6 +10,9 @@
   <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/font-awesome/4.5.0/css/font-awesome.min.css">
 
   <style type="text/css">
+    body {
+      background-color: #f5f5f5;
+    }
   </style>
 </head>
 <body>
@@ -19,15 +22,8 @@
 
     <div class="card mb-5">
       <div class="card-body">
-        <h5 class="card-title">Старые рассылки</h5>
-        <p>Пока нет рассылок</p>
-      </div>
-    </div>
-
-    <div class="card mb-5">
-      <div class="card-body">
         <h5 class="card-title">Новая рассылка</h5>
-        <form method="post" action="/send/" class="js-send-message-form">
+        <form method="post" action="/send/" class="mt-4 mb-4 js-send-message-form">
           <div class="form-row align-items-center">
             <div class="col">
               <input type="text" class="form-control mb-2" name="text" required="required" placeholder="Текст сообщения">
@@ -40,6 +36,32 @@
         </form>
       </div>
     </div>
+
+    <div class="card mb-5">
+      <div class="card-body" id="mailingProgress">
+        <p hidden="hidden">Пока нет рассылок</p>
+
+          <!-- Start SMSMailing card -->
+          <div class="row mt-4 mb-4" v-for="(mailing, mailingId) in mailings">
+            <div class="col-3">
+              <p class="lead text-right mr-1">
+                {{mailing.date}}
+              </p>
+            </div>
+            <div class="col-9">
+              <div class="progress mt-1" style="height: 20px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" :aria-valuenow="mailing.percentFulfilled" aria-valuemin="0" aria-valuemax="100" v-bind:style="{width:mailing.percentFulfilled+'%'}">{{mailing.percentFulfilled + '%'}}</div>
+              </div>
+              <p class="text-muted mt-2">
+                Рассылка #{{mailingId}}. {{mailing.SMSText}}
+              </p>
+            </div>
+          </div>
+          <!-- End SMSMailing card -->
+
+      </div>
+    </div>
+
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/loglevel/1.6.4/loglevel.min.js" integrity="sha256-ACTlnmNCkOooSKkPCKYbiex8WLE82aeiN+Z9ElZag5Q=" crossorigin="anonymous"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/validate.js/0.13.1/validate.min.js" integrity="sha256-xgP6yiUGsRLSmsC8oW0KrRWiK2ek7cSBznIDMEcdp/U=" crossorigin="anonymous"></script>
@@ -48,7 +70,8 @@
   <script src="https://code.jquery.com/jquery-3.4.1.slim.min.js" integrity="sha384-J6qa4849blE2+poT4WnyKhv5vZF5SrPo0iEjwBvKU7imGFAV0wwj1yYfoRSJoZ+n" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
   <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
-
+  <!-- development version, includes helpful console warnings -->
+  <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
   <script type="text/javascript">
     function makeAsyncForm(form){
       form.addEventListener('submit', event => {
@@ -74,17 +97,17 @@
   </script>
   <script type="text/javascript">
     const serverUpdateMsgScheme = {
-      msgType: {presence: true, type: 'string', format: /Buses/},
-      buses: {presence: true, type: 'array'},
+      msgType: {presence: true, type: 'string', format: /SMSMailingStatus/},
+      SMSMailings: {presence: true, type: 'array'},
     };
-    const busInfoScheme = {
-      busId: {presence: true},
-      lat: {presence: true, type: 'number'},
-      lng: {presence: true, type: 'number'},
-      route: {},
+    const SMSMailingScheme = {
+      timestamp: {presence: true, type: 'number'},
+      SMSText: {presence: true, type: 'string'},
+      mailingId: {presence: true, type: 'string'},
+      totalSMSAmount: {presence: true, type: 'integer'},
+      deliveredSMSAmount: {presence: true, type: 'integer'},
     };
-
-    function validateServerUpdateMsg(jsonData){
+    function validateSMSMailingScheme(jsonData){
       const errors = validate(jsonData, serverUpdateMsgScheme);
 
       if (errors){
@@ -93,11 +116,19 @@
         return false;
       }
 
-      for (let busInfo of jsonData.buses){
-        const errors = validate(busInfo, busInfoScheme);
+      for (let mailingMessage of jsonData.SMSMailings){
+        const errors = validate(mailingMessage, SMSMailingScheme);
+        if (mailingMessage.deliveredSMSAmount > mailingMessage.totalSMSAmount ||
+          mailingMessage.totalSMSAmount <= 0 ||
+          mailingMessage.deliveredSMSAmount < 0){
+          log.error(mailingMessage.deliveredSMSAmount)
+          log.error(mailingMessage.totalSMSAmount)
+          log.error("totalSMSAmount and deliveredSMSAmount shouldn't be less or equal than 0 and totalSMSAmount should be greater than deliveredSMSAmount")
+          return false;
+        }
         if (errors){
-          log.error('Server message format is broken. Check out bus info errors:', errors);
-          log.info('Following bus info was received:', busInfo);
+          log.error('Server message format is broken. Check out errors:', errors);
+          log.info('Following info was received:', mailingMessage);
           return false;
         }
       }
@@ -145,7 +176,7 @@
     }
   </script>
   <script type="text/javascript">
-    const websocketAddress = localStorage.getItem('websocket') || 'ws://127.0.0.1:8000/ws';
+    const websocketAddress = localStorage.getItem('websocket') || 'ws://127.0.0.1:5000/ws';
     log.info(`Websocket address is ${websocketAddress}`);
 
     async function sleep(delay){
@@ -154,21 +185,44 @@
       });
     }
 
-    function sendBounds(socket, bounds){
-      const msg = {
-        'msgType': 'newBounds',
-        'data': {
-          'south_lat': bounds._southWest.lat,
-          'north_lat': bounds._northEast.lat,
-          'west_lng': bounds._southWest.lng,
-          'east_lng': bounds._northEast.lng,
-        },
-      };
-      socket.send(JSON.stringify(msg));
-      log.debug('Send new bounds to the server', msg);
+    function formatDate(date){
+      // https://stackoverflow.com/a/3067896/8052573
+      let monthRaw = (date.getMonth() + 1).toString(); // getMonth() is zero-based
+      let monthFormatted = (monthRaw.length == 1)?"0"+monthRaw:monthRaw;
+
+      let dayRaw = (date.getDay()).toString();
+      let dayFormatted = (dayRaw.length == 1)?"0"+dayRaw:dayRaw;
+
+      let yearFormatted = date.getFullYear().toString();
+
+      let minutesRaw = date.getMinutes().toString();
+      let minutesFormatted = (minutesRaw.length == 1)?"0"+minutesRaw:minutesRaw;
+
+      let hoursRaw = date.getHours().toString();
+      let hoursFormatted = (hoursRaw.length == 1)?"0"+hoursRaw:hoursRaw;
+
+      let timeFormatted = hoursFormatted + ":" + minutesFormatted
+      let dateFormatted = dayFormatted + "." + monthFormatted + "." + yearFormatted
+
+      return timeFormatted + " " + dateFormatted
     }
 
-    async function trackBusesExample(socket){
+    async function updateProgressbar(mailings){
+      for (let mailing of mailings){
+        let percentFulfilled = mailing.deliveredSMSAmount/mailing.totalSMSAmount * 100
+        let date = new Date();
+        date.setTime(mailing.timestamp.toFixed(2))
+        let mailingStatus = {
+            percentFulfilled: percentFulfilled.toFixed(2),
+            percentEmpty: (100 - percentFulfilled).toFixed(2),
+            SMSText: mailing.SMSText,
+            date: formatDate(date)
+        }
+        Vue.set(app.mailings, mailing.mailingId, mailingStatus)
+      }
+    }
+
+    async function trackSMSMailing(socket){
       while (true){
         const msgJSON = await waitForIncomeMsg(socket);
 
@@ -179,12 +233,12 @@
           continue;
         }
 
-        if (msgData.msgType == 'Buses'){
-          if (!validateServerUpdateMsg(msgData)){
+        if (msgData.msgType == 'SMSMailingStatus'){
+          if (!validateSMSMailingScheme(msgData)){
             return;
           }
-          log.debug('Receive bus positions update from server', msgData);
-          displayBuses(msgData.buses);
+          log.debug('Receive mailing update from server', msgData);
+          updateProgressbar(msgData.SMSMailings);
         } else {
           log.error('Unknown server message received', msgData);
         }
@@ -198,19 +252,7 @@
 
       log.info('Websocket connection established');
 
-      const sendBoundsToServer = _.debounce(()=>{
-        const newBounds = map.getBounds();
-        sendBounds(socket, newBounds);
-      }, 100)
-
-      map.on('zoomend moveend', sendBoundsToServer);
-      sendBoundsToServer();
-
-      try {
-        await trackBuses(socket);
-      } finally {
-        map.off('zoomend moveend', sendBoundsToServer);
-      }
+      await trackSMSMailing(socket);
     }
 
     async function listenSocketWithReconnects(){
@@ -229,8 +271,14 @@
         }
       }
     }
-
+    var app = new Vue({
+      el: '#mailingProgress',
+      data: {mailings: {}},
+    })
     listenSocketWithReconnects();
+    // TODO: Красная полоса с неотправленными
+    // TODO: Сортировать логи по таймстемпам, сверху свежие
+
 
   </script>
 </body>
