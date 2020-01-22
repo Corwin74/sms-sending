@@ -121,9 +121,9 @@
         if (mailingMessage.deliveredSMSAmount > mailingMessage.totalSMSAmount ||
           mailingMessage.totalSMSAmount <= 0 ||
           mailingMessage.deliveredSMSAmount < 0){
-          log.error(mailingMessage.deliveredSMSAmount)
-          log.error(mailingMessage.totalSMSAmount)
-          log.error("totalSMSAmount and deliveredSMSAmount shouldn't be less or equal than 0 and totalSMSAmount should be greater than deliveredSMSAmount")
+          log.error(mailingMessage.deliveredSMSAmount);
+          log.error(mailingMessage.totalSMSAmount);
+          log.error("totalSMSAmount and deliveredSMSAmount shouldn't be less or equal than 0 and totalSMSAmount should be greater than deliveredSMSAmount");
           return false;
         }
         if (errors){
