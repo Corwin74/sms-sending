@@ -42,7 +42,7 @@
         <p hidden="hidden">Пока нет рассылок</p>
 
           <!-- Start SMSMailing card -->
-          <div class="row mt-4 mb-4" v-for="(mailing, mailingId) in mailings">
+          <div class="row mt-4 mb-4" v-for="mailing in mailings">
             <div class="col-3">
               <p class="lead text-right mr-1">
                 {{mailing.date}}
@@ -53,7 +53,7 @@
                 <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" :aria-valuenow="mailing.percentFulfilled" aria-valuemin="0" aria-valuemax="100" v-bind:style="{width:mailing.percentFulfilled+'%'}">{{mailing.percentFulfilled + '%'}}</div>
               </div>
               <p class="text-muted mt-2">
-                Рассылка #{{mailingId}}. {{mailing.SMSText}}
+                Рассылка #{{mailing.mailingId}}. {{mailing.SMSText}}
               </p>
             </div>
           </div>
@@ -190,7 +190,7 @@
       let monthRaw = (date.getMonth() + 1).toString(); // getMonth() is zero-based
       let monthFormatted = (monthRaw.length == 1)?"0"+monthRaw:monthRaw;
 
-      let dayRaw = (date.getDay()).toString();
+      let dayRaw = date.getDate().toString();
       let dayFormatted = (dayRaw.length == 1)?"0"+dayRaw:dayRaw;
 
       let yearFormatted = date.getFullYear().toString();
@@ -207,18 +207,39 @@
       return timeFormatted + " " + dateFormatted
     }
 
-    async function updateProgressbar(mailings){
-      for (let mailing of mailings){
-        let percentFulfilled = mailing.deliveredSMSAmount/mailing.totalSMSAmount * 100
+    async function updateProgressbar(rawMailings){
+      let idToMailing = {};
+      for (let mailing of app.mailings){
+        idToMailing[mailing.mailingId] = mailing;
+      }
+
+      for (let rawMailing of rawMailings){
+        let percentFulfilled = rawMailing.deliveredSMSAmount / rawMailing.totalSMSAmount * 100
         let date = new Date();
-        date.setTime(mailing.timestamp.toFixed(2) * 1000) // convert to ms
-        let mailingStatus = {
+        date.setTime(rawMailing.timestamp.toFixed(2) * 1000)
+        let mailing = {
+            mailingId: rawMailing.mailingId,
             percentFulfilled: percentFulfilled.toFixed(2),
             percentEmpty: (100 - percentFulfilled).toFixed(2),
-            SMSText: mailing.SMSText,
-            date: formatDate(date)
+            SMSText: rawMailing.SMSText,
+            date: formatDate(date),
+            timestamp: rawMailing.timestamp,
+        };
+
+        if (!idToMailing.hasOwnProperty(mailing.mailingId)){
+          idToMailing[mailing.mailingId] = mailing;
+          app.mailings.push(mailing);
         }
-        Vue.set(app.mailings, mailing.mailingId, mailingStatus)
+        app.mailings.sort((a, b) => {
+          if (a.timestamp > b.timestamp) {
+            return -1;
+          }
+          if (a.timestamp < b.timestamp) {
+            return 1;
+          }
+          // a должно быть равным b
+          return 0;
+        });
       }
     }
 
@@ -273,7 +294,9 @@
     }
     var app = new Vue({
       el: '#mailingProgress',
-      data: {mailings: {}},
+      data: {
+        mailings: [],
+      },
     })
     listenSocketWithReconnects();
     // TODO: Красная полоса с неотправленными
