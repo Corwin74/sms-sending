@@ -39,7 +39,7 @@
 
     <div class="card mb-5">
       <div class="card-body" id="mailingProgress">
-        <p hidden="hidden">Пока нет рассылок</p>
+        <p class="lead" v-if="!mailings.length">Пока нет рассылок</p>
 
           <!-- Start SMSMailing card -->
           <div class="row mt-4 mb-4" v-for="mailing in mailings">
