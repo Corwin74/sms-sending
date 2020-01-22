@@ -211,7 +211,7 @@
       for (let mailing of mailings){
         let percentFulfilled = mailing.deliveredSMSAmount/mailing.totalSMSAmount * 100
         let date = new Date();
-        date.setTime(mailing.timestamp.toFixed(2))
+        date.setTime(mailing.timestamp.toFixed(2) * 1000) // convert to ms
         let mailingStatus = {
             percentFulfilled: percentFulfilled.toFixed(2),
             percentEmpty: (100 - percentFulfilled).toFixed(2),
