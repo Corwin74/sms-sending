@@ -226,7 +226,11 @@
             timestamp: rawMailing.timestamp,
         };
 
-        if (!idToMailing.hasOwnProperty(mailing.mailingId)){
+        if (idToMailing.hasOwnProperty(mailing.mailingId)){
+          for (var key in mailing) {
+            Vue.set(idToMailing[mailing.mailingId], key, mailing[key]);
+          }
+        } else {
           idToMailing[mailing.mailingId] = mailing;
           app.mailings.push(mailing);
         }
