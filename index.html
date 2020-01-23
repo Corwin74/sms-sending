@@ -24,15 +24,17 @@
       <div class="card-body">
         <h5 class="card-title">Новая рассылка</h5>
         <form method="post" action="/send/" class="mt-4 mb-4 js-send-message-form">
-          <div class="form-row align-items-center">
-            <div class="col">
-              <input type="text" class="form-control mb-2" name="text" required="required" placeholder="Текст сообщения">
+          <fieldset>
+            <div class="form-row align-items-center">
+              <div class="col">
+                <input type="text" class="form-control mb-2" name="text" required="required" placeholder="Текст сообщения">
+              </div>
+              <div class="col-auto">
+                <button type="submit" class="btn btn-primary mb-2">Отправить
+                </button>
+              </div>
             </div>
-            <div class="col-auto">
-              <button type="submit" class="btn btn-primary mb-2">Отправить
-              </button>
-            </div>
-          </div>
+          </fieldset>
         </form>
       </div>
     </div>
@@ -88,10 +90,26 @@
             bodyParams.append(pair[0], pair[1]);
         }
 
+        form.firstElementChild.disabled = true;
         fetch(form.action, {
           method: 'POST',
           body: bodyParams,
-        });
+        }).then(response => {
+          
+          response.json().then(data => {
+            form.reset();
+            form.firstElementChild.disabled = false;
+            
+            if (data.errorMessage){
+              alert(data.errorMessage);
+            }
+          });
+        })
+        .catch(error => {
+          form.reset();
+          form.firstElementChild.disabled = false;
+          console.error(error)
+        });;
       })
     }
     let forms = document.getElementsByClassName('js-send-message-form');
