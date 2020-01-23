@@ -50,7 +50,11 @@
             </div>
             <div class="col-9">
               <div class="progress mt-1" style="height: 20px;">
+
                 <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" :aria-valuenow="mailing.percentFulfilled" aria-valuemin="0" aria-valuemax="100" v-bind:style="{width:mailing.percentFulfilled+'%'}">{{mailing.percentFulfilled + '%'}}</div>
+
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-danger" role="progressbar" :aria-valuenow="mailing.percentFailed" aria-valuemin="0" aria-valuemax="100" v-bind:style="{width:mailing.percentFailed+'%'}">{{mailing.percentFailed + '%'}}</div>
+
               </div>
               <p class="text-muted mt-2">
                 Рассылка #{{mailing.mailingId}}. {{mailing.SMSText}}
@@ -106,6 +110,7 @@
       mailingId: {presence: true, type: 'string'},
       totalSMSAmount: {presence: true, type: 'integer'},
       deliveredSMSAmount: {presence: true, type: 'integer'},
+      failedSMSAmount: {presence: true, type: 'integer'},
     };
     function validateSMSMailingScheme(jsonData){
       const errors = validate(jsonData, serverUpdateMsgScheme);
@@ -121,9 +126,13 @@
         if (mailingMessage.deliveredSMSAmount > mailingMessage.totalSMSAmount ||
           mailingMessage.totalSMSAmount <= 0 ||
           mailingMessage.deliveredSMSAmount < 0){
-          log.error(mailingMessage.deliveredSMSAmount);
-          log.error(mailingMessage.totalSMSAmount);
           log.error("totalSMSAmount and deliveredSMSAmount shouldn't be less or equal than 0 and totalSMSAmount should be greater than deliveredSMSAmount");
+          return false;
+        }
+        if (mailingMessage.failedSMSAmount > mailingMessage.totalSMSAmount ||
+          mailingMessage.totalSMSAmount <= 0 ||
+          mailingMessage.failedSMSAmount < 0){
+          log.error("totalSMSAmount and failedSMSAmount shouldn't be less or equal than 0 and totalSMSAmount should be greater than failedSMSAmount");
           return false;
         }
         if (errors){
@@ -214,12 +223,14 @@
       }
 
       for (let rawMailing of rawMailings){
-        let percentFulfilled = rawMailing.deliveredSMSAmount / rawMailing.totalSMSAmount * 100
+        let percentFulfilled = rawMailing.deliveredSMSAmount / rawMailing.totalSMSAmount * 100;
+        let percentFailed = rawMailing.failedSMSAmount / rawMailing.totalSMSAmount * 100;
         let date = new Date();
         date.setTime(rawMailing.timestamp.toFixed(2) * 1000)
         let mailing = {
             mailingId: rawMailing.mailingId,
             percentFulfilled: percentFulfilled.toFixed(2),
+            percentFailed: percentFailed.toFixed(2),
             percentEmpty: (100 - percentFulfilled).toFixed(2),
             SMSText: rawMailing.SMSText,
             date: formatDate(date),
