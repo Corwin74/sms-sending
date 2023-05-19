@@ -3,3 +3,4 @@ click~=8.1.0
 trio~=0.22.0
 asks
 python-dotenv
+pydantic
