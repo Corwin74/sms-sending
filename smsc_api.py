@@ -1,5 +1,6 @@
 import ssl
 import warnings
+from contextvars import ContextVar
 import certifi
 import asks
 import click
@@ -9,6 +10,9 @@ import dotenv
 
 SMS_URL = 'https://smsc.ru/sys/send.php'
 STATUS_URL = 'https://smsc.ru/sys/status.php'
+
+smsc_login = ContextVar('smsc_login')
+smsc_password = ContextVar('smsc_password')
 
 
 class UnexpectedAPIResponse(AttributeError):
@@ -23,10 +27,10 @@ class UnexpectedAPIResponse(AttributeError):
 @click.option('--msg', required=True, type=str)
 @click.option('--sms_ttl', default=1, type=int)
 def main(user, api_password, phones, sender, msg, sms_ttl):
+    smsc_login.set(user)
+    smsc_password.set(api_password)
     trio.run(
         send_sms,
-        user,
-        api_password,
         phones,
         sender,
         msg,
@@ -34,7 +38,9 @@ def main(user, api_password, phones, sender, msg, sms_ttl):
     )
 
 
-async def send_sms(user, password, phones, sender, msg, sms_ttl):
+async def send_sms(phones, sender, msg, sms_ttl, user=None, password=None):
+    user = user or smsc_login.get()
+    password = password or smsc_password.get()
     payload = {
         'login': user,
         'psw': password,
