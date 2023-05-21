@@ -3,98 +3,102 @@ import warnings
 from contextvars import ContextVar
 import certifi
 import asks
-import click
+import asyncclick as click
 import trio
 from trio import TrioDeprecationWarning
 import dotenv
 
-SMS_URL = 'https://smsc.ru/sys/send.php'
+SEND_URL = 'https://smsc.ru/sys/send.php'
 STATUS_URL = 'https://smsc.ru/sys/status.php'
+JSON_ANSWER_FORMAT = 3
 
 smsc_login = ContextVar('smsc_login')
 smsc_password = ContextVar('smsc_password')
+ssl_context = ContextVar('ssl_context')
 
 
-class UnexpectedAPIResponse(AttributeError):
+class SmscApiError(Exception):
     pass
 
 
+async def request_smsc(
+    http_method,
+    api_method,
+    *,
+    login=None,
+    password=None,
+    payload={},
+):
+
+    if api_method == 'send':
+        url = SEND_URL
+    elif api_method == 'status':
+        url = STATUS_URL
+    else:
+        raise SmscApiError
+
+    payload['login'] = login or smsc_login.get()
+    payload['psw'] = password or smsc_password.get()
+    if 'fmt' not in payload:
+        payload['fmt'] = JSON_ANSWER_FORMAT
+
+    resp = await asks.request(
+        http_method,
+        url,
+        params=payload,
+        timeout=5,
+        ssl_context=ssl_context.get(),
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 @click.command
-@click.option('--user', required=True, type=str)
-@click.option('--api_password', required=True, type=str)
+@click.option('--user', required=True, type=str, envvar='SMSC_USER')
+@click.option(
+    '--api_password',
+    required=True,
+    type=str,
+    envvar='SMSC_API_PASSWORD',
+)
 @click.option('--sender', default='SMSC.RU')
 @click.option('--phones', required=True, type=str)
 @click.option('--msg', required=True, type=str)
 @click.option('--sms_ttl', default=1, type=int)
-def main(user, api_password, phones, sender, msg, sms_ttl):
+async def main(user, api_password, phones, sender, msg, sms_ttl):
     smsc_login.set(user)
     smsc_password.set(api_password)
-    trio.run(
-        send_sms,
-        phones,
-        sender,
-        msg,
-        sms_ttl,
-    )
-
-
-async def send_sms(phones, sender, msg, sms_ttl, user=None, password=None):
-    user = user or smsc_login.get()
-    password = password or smsc_password.get()
+    ssl_context.set(ssl.create_default_context(cafile=certifi.where()))
     payload = {
-        'login': user,
-        'psw': password,
         'sender': sender,
         'mes': msg,
         'valid': sms_ttl,
         'phones': phones,
-        'fmt': 3,
     }
-    resp = await asks.get(
-        SMS_URL,
-        params=payload,
-        timeout=5,
-        ssl_context=ssl_context,
-        )
-    resp.raise_for_status()
-    parced_resp = resp.json()
+    parced_resp = await request_smsc(
+        'GET',
+        'send',
+        payload=payload,
+    )
     print(parced_resp)
     if 'error' in parced_resp:
-        print(parced_resp)
-        return None
+        raise SmscApiError
     if 'id' in parced_resp and 'cnt' in parced_resp:
-        status = await get_sms_status(
-            user,
-            password,
-            phones,
-            parced_resp['id'],
+        status = await request_smsc(
+            'GET',
+            'status',
+            payload={
+                'phone': phones,
+                'id': parced_resp['id'],
+            },
         )
         print(status)
         return status['status']
-    raise UnexpectedAPIResponse
-
-
-async def get_sms_status(user, password, phones, sms_id):
-    payload = {
-        'login': user,
-        'psw': password,
-        'id': sms_id,
-        'phone': phones,
-        'fmt': 3,
-    }
-    resp = await asks.get(
-        STATUS_URL,
-        params=payload,
-        timeout=5,
-        ssl_context=ssl_context,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    raise SmscApiError
 
 
 # pylint: disable=E1120
 if __name__ == '__main__':
     dotenv.load_dotenv()
     warnings.filterwarnings(action='ignore', category=TrioDeprecationWarning)
-    ssl_context = ssl.create_default_context(cafile=certifi.where())
-    main(auto_envvar_prefix='SMSC')
+    main(_anyio_backend="trio")
