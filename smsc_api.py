@@ -1,6 +1,7 @@
 import ssl
 import warnings
 from contextvars import ContextVar
+from unittest.mock import patch
 import certifi
 import asks
 import asyncclick as click
@@ -27,7 +28,7 @@ async def request_smsc(
     *,
     login=None,
     password=None,
-    payload={},
+    payload=None,
 ):
 
     if api_method == 'send':
@@ -37,10 +38,12 @@ async def request_smsc(
     else:
         raise SmscApiError
 
-    payload['login'] = login or smsc_login.get()
-    payload['psw'] = password or smsc_password.get()
+    if payload is None:
+        payload = {}
     if 'fmt' not in payload:
         payload['fmt'] = JSON_ANSWER_FORMAT
+    payload['login'] = login or smsc_login.get()
+    payload['psw'] = password or smsc_password.get()
 
     resp = await asks.request(
         http_method,
@@ -51,6 +54,22 @@ async def request_smsc(
     )
     resp.raise_for_status()
     return resp.json()
+
+
+# pylint: disable=w0613
+def request_smsc_side_effect(*args, **kwargs):
+    if args[1] == 'send':
+        return {'id': 52, 'cnt': 1}
+    if args[1] == 'status':
+        return {
+            'status': -1,
+            'last_date': '21.05.2023 19:16:17',
+            'last_timestamp': 1684685777,
+            'flag': 0,
+            'err': 200
+        }
+    raise SmscApiError
+# pylint: enable=w0613
 
 
 @click.command
@@ -75,25 +94,31 @@ async def main(user, api_password, phones, sender, msg, sms_ttl):
         'valid': sms_ttl,
         'phones': phones,
     }
-    parced_resp = await request_smsc(
-        'GET',
-        'send',
-        payload=payload,
-    )
-    print(parced_resp)
+
+    with patch('__main__.request_smsc') as mock_func:
+        mock_func.side_effect = request_smsc_side_effect
+        parced_resp = await request_smsc(
+            'GET',
+            'send',
+            payload=payload,
+        )
+        print(parced_resp)
+
     if 'error' in parced_resp:
         raise SmscApiError
     if 'id' in parced_resp and 'cnt' in parced_resp:
-        status = await request_smsc(
-            'GET',
-            'status',
-            payload={
-                'phone': phones,
-                'id': parced_resp['id'],
-            },
-        )
-        print(status)
-        return status['status']
+        with patch('__main__.request_smsc') as mock_func:
+            mock_func.side_effect = request_smsc_side_effect
+            status = await request_smsc(
+                'GET',
+                'status',
+                payload={
+                    'phone': phones,
+                    'id': parced_resp['id'],
+                },
+            )
+            print(status)
+            return status['status']
     raise SmscApiError
 
 
