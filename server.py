@@ -9,9 +9,17 @@ import trio
 from trio import TrioDeprecationWarning
 import dotenv
 from smsc_api import request_smsc, request_smsc_side_effect
+from dataclasses import dataclass
+from quart_schema import QuartSchema, validate_request, DataSource
+
+
+@dataclass
+class SmsText:
+    text: int
 
 
 app = QuartTrio(__name__)
+QuartSchema(app, convert_casing=True)
 smsc_login = ContextVar('smsc_login')
 smsc_password = ContextVar('smsc_password')
 ssl_context = ContextVar('ssl_context')
@@ -51,9 +59,10 @@ async def ws():
     }''')
 
 
-
 @app.route('/send/', methods=['POST'])
-async def send():
+@validate_request(SmsText, source=DataSource.FORM)
+async def send(data: SmsText):
+    print(data)
     form = await request.form
     with patch('__main__.request_smsc') as mock_func:
         mock_func.side_effect = request_smsc_side_effect
@@ -63,7 +72,7 @@ async def send():
             'send',
             payload=payload,
         )
-    print(parced_resp)
+    print(f'Отправлено SMS c текстом: {form["text"]}')
     return parced_resp
 
 
