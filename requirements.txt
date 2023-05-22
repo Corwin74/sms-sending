@@ -4,3 +4,6 @@ trio~=0.22.0
 asks
 python-dotenv
 pydantic
+quart
+quart-trio
+asyncclick
