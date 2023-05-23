@@ -44,29 +44,40 @@ async def hello():
 
 @app.websocket('/ws')
 async def ws():
+    first_c = 0
+    second_c = 0
     while True:
-        await trio.sleep(5)
-        await websocket.send('''
-    {
-        "msgType": "SMSMailingStatus", "SMSMailings": [
+        await trio.sleep(1)
+        if first_c < 346:
+            first_c += 3
+        else:
+            first_c = 0
+        if second_c < 3994:
+            second_c += 40
+        else:
+            second_c = 0
+        xxx = '''
         {
-        "timestamp": 1123131392.734,
-        "SMSText": "Сегодня гроза! Будьте осторожны!",
-        "mailingId": "1",
-        "totalSMSAmount": 345,
-        "deliveredSMSAmount": 47,
-        "failedSMSAmount": 5
-        },
-        {
-        "timestamp": 1323141112.924422,
-        "SMSText": "Новогодняя акция!!! Приходи в магазин и получи скидку!!!",
-        "mailingId": "new-year",
-        "totalSMSAmount": 3993,
-        "deliveredSMSAmount": 801,
-        "failedSMSAmount": 0
-        }
-    ]
-    }''')
+            "msgType": "SMSMailingStatus", "SMSMailings": [
+            {
+            "timestamp": 1123131392.734,
+            "SMSText": "Сегодня гроза! Будьте осторожны!",
+            "mailingId": "1",
+            "totalSMSAmount": 345,
+            "deliveredSMSAmount":'''+str(first_c)+''',
+            "failedSMSAmount": 5
+            },
+            {
+            "timestamp": 1323141112.924422,
+            "SMSText": "Новогодняя акция!!! Приходи в магазин и получи скидку!!!",
+            "mailingId": "new-year",
+            "totalSMSAmount": 3993,
+            "deliveredSMSAmount": '''+str(second_c)+''',
+            "failedSMSAmount": 0
+            }
+        ]
+        }'''
+        await websocket.send(xxx)
 
 
 @app.route('/send/', methods=['POST'])
