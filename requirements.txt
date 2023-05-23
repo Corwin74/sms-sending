@@ -7,3 +7,4 @@ pydantic
 quart
 quart-trio
 asyncclick
+quart-schema

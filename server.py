@@ -1,25 +1,35 @@
 import os
 import warnings
-import json
 from contextvars import ContextVar
 from unittest.mock import patch
-from quart import request, websocket
+from quart import websocket
 from quart_trio import QuartTrio
 import trio
 from trio import TrioDeprecationWarning
 import dotenv
+from pydantic import BaseModel, validator
+from quart_schema import (
+    QuartSchema,
+    validate_request,
+    DataSource,
+    RequestSchemaValidationError,
+)
 from smsc_api import request_smsc, request_smsc_side_effect
-from dataclasses import dataclass
-from quart_schema import QuartSchema, validate_request, DataSource
 
 
-@dataclass
-class SmsText:
-    text: int
+class PySmsText(BaseModel):
+    text: str
+
+    @validator('text')
+    @classmethod
+    def check_text_lenght(cls, sms_text_input):
+        if not 0 < len(sms_text_input) < 160:
+            raise ValueError('SMS text must be 1-160 symbols')
+        return sms_text_input
 
 
 app = QuartTrio(__name__)
-QuartSchema(app, convert_casing=True)
+QuartSchema(app)
 smsc_login = ContextVar('smsc_login')
 smsc_password = ContextVar('smsc_password')
 ssl_context = ContextVar('ssl_context')
@@ -55,25 +65,28 @@ async def ws():
         "deliveredSMSAmount": 801,
         "failedSMSAmount": 0
         }
-    ] 
+    ]
     }''')
 
 
 @app.route('/send/', methods=['POST'])
-@validate_request(SmsText, source=DataSource.FORM)
-async def send(data: SmsText):
-    print(data)
-    form = await request.form
+@validate_request(PySmsText, source=DataSource.FORM)
+async def send(data: PySmsText):
     with patch('__main__.request_smsc') as mock_func:
         mock_func.side_effect = request_smsc_side_effect
-        payload = {'msg': form['text']}
+        payload = {'msg': data.text}
         parced_resp = await request_smsc(
             'GET',
             'send',
             payload=payload,
         )
-    print(f'Отправлено SMS c текстом: {form["text"]}')
+    print(f'Отправлено SMS c текстом: {data.text}')
     return parced_resp
+
+
+@app.errorhandler(RequestSchemaValidationError)
+async def handle_request_validation_error(_):
+    return {"errorMessage": "Validation error!"}, 400
 
 
 if __name__ == '__main__':
