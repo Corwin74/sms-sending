@@ -49,9 +49,9 @@
       <p class="lead p-3" v-if="!mailings.length">Пока нет рассылок</p>
 
       <!-- Start SMSMailing card -->
-      <div class="row mt-4 mb-4" v-for="mailing in mailings">
+      <div class="row mt-4 mb-4 mr-4" v-for="mailing in mailings">
         <div class="col-3">
-          <p class="lead text-right mr-1">
+          <p class="lead text-left ml-4">
             {{mailing.date}}
           </p>
         </div>
