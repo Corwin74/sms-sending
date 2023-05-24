@@ -56,7 +56,7 @@ async def ws():
             second_c += 40
         else:
             second_c = 0
-        xxx = '''
+        stub = '''
         {
             "msgType": "SMSMailingStatus", "SMSMailings": [
             {
@@ -69,7 +69,7 @@ async def ws():
             },
             {
             "timestamp": 1323141112.924422,
-            "SMSText": "Новогодняя акция!!! Приходи в магазин и получи скидку!!!",
+            "SMSText": "Новогодняя акция! Приходи в магазин и получи скидку!",
             "mailingId": "new-year",
             "totalSMSAmount": 3993,
             "deliveredSMSAmount": '''+str(second_c)+''',
@@ -77,7 +77,7 @@ async def ws():
             }
         ]
         }'''
-        await websocket.send(xxx)
+        await websocket.send(stub)
 
 
 @app.route('/send/', methods=['POST'])
