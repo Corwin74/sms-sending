@@ -1,11 +1,21 @@
 import os
 import warnings
+from trio import TrioDeprecationWarning
 from contextvars import ContextVar
 from unittest.mock import patch
+import asyncio
+import aioredis
+# pylint: disable=C0411
+warnings.filterwarnings(
+    action='ignore',
+    category=TrioDeprecationWarning
+)
 from quart import websocket
 from quart_trio import QuartTrio
 import trio
-from trio import TrioDeprecationWarning
+import trio_asyncio
+from hypercorn.trio import serve
+from hypercorn.config import Config as HyperConfig
 import dotenv
 from pydantic import BaseModel, validator
 from quart_schema import (
@@ -15,6 +25,7 @@ from quart_schema import (
     RequestSchemaValidationError,
 )
 from smsc_api import request_smsc, request_smsc_side_effect
+from db import Database
 
 
 class PySmsText(BaseModel):
@@ -33,6 +44,7 @@ QuartSchema(app)
 smsc_login = ContextVar('smsc_login')
 smsc_password = ContextVar('smsc_password')
 ssl_context = ContextVar('ssl_context')
+sms_db_context = ContextVar('sms_db')
 
 
 @app.route('/')
@@ -48,14 +60,11 @@ async def ws():
     second_c = 0
     while True:
         await trio.sleep(1)
-        if first_c < 346:
-            first_c += 3
-        else:
-            first_c = 0
-        if second_c < 3994:
-            second_c += 40
-        else:
-            second_c = 0
+        sms_db = sms_db_context.get()
+        sms_mailings = await trio_asyncio.aio_as_trio(
+            sms_db.get_sms_mailings()
+        )
+        print(sms_mailings)
         stub = '''
         {
             "msgType": "SMSMailingStatus", "SMSMailings": [
@@ -91,7 +100,20 @@ async def send(data: PySmsText):
             'send',
             payload=payload,
         )
+    sms_db = sms_db_context.get()
     print(f'Отправлено SMS c текстом: {data.text}')
+    sms_id = parced_resp['id']
+    phones = [
+            '+79057589746',
+    ]
+    text = data.text
+    await trio_asyncio.aio_as_trio(
+        sms_db.add_sms_mailing(sms_id, phones, text)
+    )
+    sms_ids = await trio_asyncio.aio_as_trio(
+        sms_db.list_sms_mailings()
+    )
+    print('Registered mailings ids', sms_ids)
     return parced_resp
 
 
@@ -100,9 +122,25 @@ async def handle_request_validation_error(_):
     return {"errorMessage": "Validation error!"}, 400
 
 
+async def run_server():
+    async with trio_asyncio.open_loop() as loop:
+        assert loop == asyncio.get_event_loop()
+        dotenv.load_dotenv()
+        smsc_login.set(os.environ['SMSC_USER'])
+        smsc_password.set(os.environ['SMSC_API_PASSWORD'])
+        redis = await trio_asyncio.aio_as_trio(
+            aioredis.from_url(
+                os.environ['REDIS_URL'],
+                decode_responses=True
+            )
+        )
+        sms_db_context.set(Database(redis))
+
+        config = HyperConfig()
+        config.bind = ['127.0.0.1:5000']
+        config.use_reloader = True
+        await serve(app, config)
+
+
 if __name__ == '__main__':
-    dotenv.load_dotenv()
-    smsc_login.set(os.environ['SMSC_USER'])
-    smsc_password.set(os.environ['SMSC_API_PASSWORD'])
-    warnings.filterwarnings(action='ignore', category=TrioDeprecationWarning)
-    app.run()
+    trio.run(run_server)

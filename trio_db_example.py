@@ -30,7 +30,7 @@ async def main():
     )
 
     try:
-        db_connector = Database(redis)
+        sms_db = Database(redis)
 
         sms_id = '1'
 
@@ -42,22 +42,22 @@ async def main():
         text = 'Вечером будет шторм!'
 
         await trio_asyncio.aio_as_trio(
-            db_connector.add_sms_mailing(sms_id, phones, text)
+            sms_db.add_sms_mailing(sms_id, phones, text)
         )
 
         sms_ids = await trio_asyncio.aio_as_trio(
-            db_connector.list_sms_mailings()
+            sms_db.list_sms_mailings()
         )
         print('Registered mailings ids', sms_ids)
 
         pending_sms_list = await trio_asyncio.aio_as_trio(
-            db_connector.get_pending_sms_list()
+            sms_db.get_pending_sms_list()
         )
         print('pending:')
         print(pending_sms_list)
 
         await trio_asyncio.aio_as_trio(
-            db_connector.update_sms_status_in_bulk([
+            sms_db.update_sms_status_in_bulk([
                 # [sms_id, phone_number, status]
                 [sms_id, '112', 'failed'],
                 [sms_id, '911', 'pending'],
@@ -67,13 +67,13 @@ async def main():
         )
 
         pending_sms_list = await trio_asyncio.aio_as_trio(
-            db_connector.get_pending_sms_list()
+            sms_db.get_pending_sms_list()
         )
         print('pending:')
         print(pending_sms_list)
 
         sms_mailings = await trio_asyncio.aio_as_trio(
-            db_connector.get_sms_mailings('1')
+            sms_db.get_sms_mailings('1')
         )
         print('sms_mailings')
         print(sms_mailings)
