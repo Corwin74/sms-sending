@@ -1,5 +1,4 @@
 certifi
-click~=8.1.0
 trio~=0.22.0
 asks
 python-dotenv
@@ -8,3 +7,5 @@ quart
 quart-trio
 asyncclick
 quart-schema
+trio_asyncio
+aioredis

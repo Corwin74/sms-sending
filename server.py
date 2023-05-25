@@ -1,17 +1,11 @@
 import os
 import warnings
+import json
 from trio import TrioDeprecationWarning
 from contextvars import ContextVar
 from unittest.mock import patch
 import asyncio
 import aioredis
-# pylint: disable=C0411
-warnings.filterwarnings(
-    action='ignore',
-    category=TrioDeprecationWarning
-)
-from quart import websocket
-from quart_trio import QuartTrio
 import trio
 import trio_asyncio
 from hypercorn.trio import serve
@@ -26,6 +20,13 @@ from quart_schema import (
 )
 from smsc_api import request_smsc, request_smsc_side_effect
 from db import Database
+# pylint: disable=C0413
+warnings.filterwarnings(
+    action='ignore',
+    category=TrioDeprecationWarning
+)
+from quart import websocket
+from quart_trio import QuartTrio
 
 
 class PySmsText(BaseModel):
@@ -47,6 +48,22 @@ ssl_context = ContextVar('ssl_context')
 sms_db_context = ContextVar('sms_db')
 
 
+def get_sms_delivery_report(mailing):
+    pendning_count = 0
+    delivered_count = 0
+    failed_count = 0
+    for _, status in mailing['phones'].items():
+        if status == 'pending':
+            pendning_count += 1
+        elif status == 'delivered':
+            delivered_count += 1
+        elif status == 'failed':
+            failed_count += 1
+        else:
+            raise ValueError(f'Wrong status: {status}')
+    return (pendning_count, delivered_count, failed_count)
+
+
 @app.route('/')
 async def hello():
     async with await trio.open_file('index.html') as f:
@@ -56,37 +73,33 @@ async def hello():
 
 @app.websocket('/ws')
 async def ws():
-    first_c = 0
-    second_c = 0
     while True:
         await trio.sleep(1)
         sms_db = sms_db_context.get()
-        sms_mailings = await trio_asyncio.aio_as_trio(
-            sms_db.get_sms_mailings()
+        sms_ids = await trio_asyncio.aio_as_trio(
+            sms_db.list_sms_mailings()
         )
-        print(sms_mailings)
-        stub = '''
-        {
-            "msgType": "SMSMailingStatus", "SMSMailings": [
-            {
-            "timestamp": 1123131392.734,
-            "SMSText": "Сегодня гроза! Будьте осторожны!",
-            "mailingId": "1",
-            "totalSMSAmount": 345,
-            "deliveredSMSAmount":'''+str(first_c)+''',
-            "failedSMSAmount": 5
-            },
-            {
-            "timestamp": 1323141112.924422,
-            "SMSText": "Новогодняя акция! Приходи в магазин и получи скидку!",
-            "mailingId": "new-year",
-            "totalSMSAmount": 3993,
-            "deliveredSMSAmount": '''+str(second_c)+''',
-            "failedSMSAmount": 0
-            }
-        ]
-        }'''
-        await websocket.send(stub)
+        sms_mailings = await trio_asyncio.aio_as_trio(
+            sms_db.get_sms_mailings(*sms_ids)
+        )
+        mailing_status = []
+        for mailing in sms_mailings:
+            sms_delivery_report = get_sms_delivery_report(mailing)
+            mailing_status.append(
+                {
+                    "timestamp": mailing['created_at'],
+                    "SMSText": mailing['text'],
+                    "mailingId": str(mailing['sms_id']),
+                    "totalSMSAmount": mailing['phones_count'],
+                    "deliveredSMSAmount": sms_delivery_report[1],
+                    "failedSMSAmount": sms_delivery_report[2]
+                }
+            )
+        message = {
+            "msgType": "SMSMailingStatus",
+            "SMSMailings": mailing_status
+        }
+        await websocket.send(json.dumps(message))
 
 
 @app.route('/send/', methods=['POST'])
