@@ -5,7 +5,6 @@ from unittest.mock import patch
 import certifi
 import asks
 import asyncclick as click
-import trio
 from trio import TrioDeprecationWarning
 import dotenv
 
@@ -30,7 +29,6 @@ async def request_smsc(
     password=None,
     payload=None,
 ):
-
     if api_method == 'send':
         url = SEND_URL
     elif api_method == 'status':
@@ -53,7 +51,10 @@ async def request_smsc(
         ssl_context=ssl_context.get(),
     )
     resp.raise_for_status()
-    return resp.json()
+    parced_resp = resp.json()
+    if 'error' in parced_resp:
+        raise SmscApiError
+    return parced_resp
 
 
 # pylint: disable=w0613
@@ -104,8 +105,6 @@ async def main(user, api_password, phones, sender, msg, sms_ttl):
         )
         print(parced_resp)
 
-    if 'error' in parced_resp:
-        raise SmscApiError
     if 'id' in parced_resp and 'cnt' in parced_resp:
         with patch('__main__.request_smsc') as mock_func:
             mock_func.side_effect = request_smsc_side_effect

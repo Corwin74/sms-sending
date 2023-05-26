@@ -1,10 +1,12 @@
 import os
+import ssl
 import warnings
 import json
-from trio import TrioDeprecationWarning
+import logging
 from contextvars import ContextVar
-from unittest.mock import patch
 import asyncio
+import certifi
+from trio import TrioDeprecationWarning
 import aioredis
 import trio
 import trio_asyncio
@@ -18,8 +20,6 @@ from quart_schema import (
     DataSource,
     RequestSchemaValidationError,
 )
-from smsc_api import request_smsc, request_smsc_side_effect
-from db import Database
 # pylint: disable=C0413
 warnings.filterwarnings(
     action='ignore',
@@ -27,6 +27,16 @@ warnings.filterwarnings(
 )
 from quart import websocket
 from quart_trio import QuartTrio
+from db import Database
+from smsc_api import request_smsc, smsc_login, smsc_password, ssl_context, SmscApiError
+
+
+TEST_PHONE_NUMBER = '+79057589746'
+
+logger = logging.getLogger(__name__)
+app = QuartTrio(__name__)
+QuartSchema(app)
+sms_db_context = ContextVar('sms_db')
 
 
 class PySmsText(BaseModel):
@@ -38,14 +48,6 @@ class PySmsText(BaseModel):
         if not 0 < len(sms_text_input) < 160:
             raise ValueError('SMS text must be 1-160 symbols')
         return sms_text_input
-
-
-app = QuartTrio(__name__)
-QuartSchema(app)
-smsc_login = ContextVar('smsc_login')
-smsc_password = ContextVar('smsc_password')
-ssl_context = ContextVar('ssl_context')
-sms_db_context = ContextVar('sms_db')
 
 
 def get_sms_delivery_report(mailing):
@@ -105,29 +107,31 @@ async def ws():
 @app.route('/send/', methods=['POST'])
 @validate_request(PySmsText, source=DataSource.FORM)
 async def send(data: PySmsText):
-    with patch('__main__.request_smsc') as mock_func:
-        mock_func.side_effect = request_smsc_side_effect
-        payload = {'msg': data.text}
+    payload = {'mes': data.text, "phones": TEST_PHONE_NUMBER}
+    try:
         parced_resp = await request_smsc(
             'GET',
             'send',
             payload=payload,
         )
-    sms_db = sms_db_context.get()
-    print(f'Отправлено SMS c текстом: {data.text}')
-    sms_id = parced_resp['id']
-    phones = [
-            '+79057589746',
-    ]
-    text = data.text
-    await trio_asyncio.aio_as_trio(
-        sms_db.add_sms_mailing(sms_id, phones, text)
-    )
-    sms_ids = await trio_asyncio.aio_as_trio(
-        sms_db.list_sms_mailings()
-    )
-    print('Registered mailings ids', sms_ids)
-    return parced_resp
+        logger.info('Отправлено SMS c текстом: %s', data.text)
+        sms_id = parced_resp['id']
+        phones = [
+                TEST_PHONE_NUMBER,
+        ]
+        text = data.text
+        sms_db = sms_db_context.get()
+        await trio_asyncio.aio_as_trio(
+            sms_db.add_sms_mailing(sms_id, phones, text)
+        )
+        sms_ids = await trio_asyncio.aio_as_trio(
+            sms_db.list_sms_mailings()
+        )
+        logger.info('Registered mailings ids: %s', sms_ids)
+        return parced_resp
+    except SmscApiError:
+        logger.error('SmscApiError')
+        return {"errorMessage": "SMS API error!"}, 400
 
 
 @app.errorhandler(RequestSchemaValidationError)
@@ -138,9 +142,19 @@ async def handle_request_validation_error(_):
 async def run_server():
     async with trio_asyncio.open_loop() as loop:
         assert loop == asyncio.get_event_loop()
+        log_handler = logging.FileHandler('sms_server.log')
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S',
+        )
+        log_handler.setFormatter(formatter)
+        log_handler.setLevel('INFO')
+        logger.setLevel('INFO')
+        logger.addHandler(log_handler)
         dotenv.load_dotenv()
         smsc_login.set(os.environ['SMSC_USER'])
         smsc_password.set(os.environ['SMSC_API_PASSWORD'])
+        ssl_context.set(ssl.create_default_context(cafile=certifi.where()))
         redis = await trio_asyncio.aio_as_trio(
             aioredis.from_url(
                 os.environ['REDIS_URL'],
