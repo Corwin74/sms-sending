@@ -7,6 +7,14 @@
 ## Как запустить
 
 - Скачайте код
+- Создайте файл `.env` со следующими настройками:
+```env
+SMSC_USER='Corwin74'- логин от SMSC.ru
+SMSC_API_PASSWORD='Api_pass1' - пароль для доступа к API SMSC.ru
+SMSC_SMS_TTL=1 - время жизни  SMS в часах
+REDIS_URL='redis://login:password@host' - строка подключения к базе Redis
+TEST_PHONE_NUMBER='+7 322-223'  - телефон для получения тестовых рассылок
+```
 - Откройте в браузере файл index.html
 
 ## Получение данных из формы
